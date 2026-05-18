@@ -63,50 +63,88 @@ function launchProjector() {
 // --- 3. CUE MANAGEMENT (Direct File Upload to Cloud) ---
 async function addCue() {
     const type = document.getElementById('typeInput').value;
+    const source = document.getElementById('sourceInput').value; // Get chosen source
     const fileInput = document.getElementById('filePicker');
-    
-    if (fileInput.files.length === 0) return alert("Select a file first!");
-    if (!supabaseClient) return alert("Connect your Supabase database first!");
-
-    const file = fileInput.files[0];
     const addBtn = document.querySelector('.btn-add');
     
+    if (!supabaseClient) return alert("Connect your Supabase database first!");
+
+    let finalFileName = "";
+    let finalPath = "";
+
     try {
-        addBtn.innerText = "Uploading...";
+        addBtn.innerText = source === 'computer' ? "Uploading..." : "Adding...";
         addBtn.disabled = true;
 
-        // Generate a simple timestamp file path
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${Date.now()}.${fileExt}`;
+        // ==========================================
+        // PATH A: PULL FILE FROM COMPUTER & UPLOAD IT
+        // ==========================================
+        if (source === 'computer') {
+            if (fileInput.files.length === 0) {
+                alert("Select a file from your computer first!");
+                return;
+            }
 
-        // 1. Upload raw binary file straight to user's bucket
-        const { error: uploadError } = await supabaseClient.storage
-            .from(currentBucket)
-            .upload(fileName, file);
+            const file = fileInput.files[0];
+            const fileExt = file.name.split('.').pop();
+            const uniqueName = `${Date.now()}.${fileExt}`;
 
-        if (uploadError) throw uploadError;
+            // 1. Upload raw binary file straight to user's bucket
+            const { error: uploadError } = await supabaseClient.storage
+                .from(currentBucket)
+                .upload(uniqueName, file);
 
-        // 2. Extract public streamable tracking link
-        const { data: urlData } = supabaseClient.storage
-            .from(currentBucket)
-            .getPublicUrl(fileName);
+            if (uploadError) throw uploadError;
 
-        // 3. Register cue with small URL pointer instead of heavy Base64
+            // 2. Extract public streamable tracking link
+            const { data: urlData } = supabaseClient.storage
+                .from(currentBucket)
+                .getPublicUrl(uniqueName);
+
+            finalFileName = file.name;
+            finalPath = urlData.publicUrl;
+
+        // ==========================================
+        // PATH B: GRAB EXISTING FILE FROM SUPABASE
+        // ==========================================
+        } else if (source === 'supabase') {
+            const supabaseDropdown = document.getElementById('supabaseFilePicker');
+            const selectedFile = supabaseDropdown.value;
+
+            if (!selectedFile) {
+                alert("Please select a file from the Supabase list first!");
+                return;
+            }
+
+            // Get the instant public URL since it's already uploaded
+            const { data: urlData } = supabaseClient.storage
+                .from(currentBucket)
+                .getPublicUrl(selectedFile);
+
+            finalFileName = selectedFile;
+            finalPath = urlData.publicUrl;
+        }
+
+        // ==========================================
+        // SHARED: REGISTER AND RENDER THE CUE
+        // ==========================================
         const newCue = {
             id: Date.now(),
             type: type,
-            fileName: file.name,
-            path: urlData.publicUrl, 
+            fileName: finalFileName,
+            path: finalPath, 
             needsLinking: false
         };
 
         cues.push(newCue);
         renderCues();
+        
+        // Reset local input just in case
         fileInput.value = ""; 
 
     } catch (err) {
-        console.error("Upload error details:", err);
-        alert("Upload failed! Verify that your bucket name is typed accurately, your keys are correct, and your bucket settings are toggled to Public.\n\nError: " + err.message);
+        console.error("Upload/Add error details:", err);
+        alert("Action failed! Verify that your bucket name is typed accurately, your keys are correct, and your bucket settings are toggled to Public.\n\nError: " + err.message);
     } finally {
         addBtn.innerText = "+ Add Cue";
         addBtn.disabled = false;
@@ -275,7 +313,6 @@ async function fetchSupabaseFiles() {
         // Replace 'vfxtest' with your actual bucket name variable if dynamic
         const bucketName = document.getElementById('dbBucket').value || 'vfxtest'; 
         
-        // Use your renamed supabase client variable here (e.g., supabaseClient)
         const { data, error } = await supabaseClient
             .storage
             .from(bucketName)
