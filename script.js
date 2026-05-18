@@ -249,3 +249,62 @@ function loadShow(event) {
     };
     reader.readAsText(file);
 }
+
+// 1. Toggle visibility between local upload and cloud fetch
+function toggleSourceInput() {
+    const source = document.getElementById('sourceInput').value;
+    const localGroup = document.getElementById('localFileGroup');
+    const supabaseGroup = document.getElementById('supabaseFileGroup');
+
+    if (source === 'supabase') {
+        localGroup.style.display = 'none';
+        supabaseGroup.style.display = 'block';
+        fetchSupabaseFiles(); // Fetch the files automatically when selected
+    } else {
+        localGroup.style.display = 'block';
+        supabaseGroup.style.display = 'none';
+    }
+}
+
+// 2. Fetch the list of files from your Supabase storage bucket
+async function fetchSupabaseFiles() {
+    const selectDropdown = document.getElementById('supabaseFilePicker');
+    selectDropdown.innerHTML = '<option value="">Loading files...</option>';
+
+    try {
+        // Replace 'vfxtest' with your actual bucket name variable if dynamic
+        const bucketName = document.getElementById('dbBucket').value || 'vfxtest'; 
+        
+        // Use your renamed supabase client variable here (e.g., supabaseClient)
+        const { data, error } = await supabaseClient
+            .storage
+            .from(bucketName)
+            .list('', {
+                limit: 100,
+                sortBy: { column: 'name', order: 'asc' },
+            });
+
+        if (error) throw error;
+
+        if (!data || data.length === 0) {
+            selectDropdown.innerHTML = '<option value="">No files found in bucket</option>';
+            return;
+        }
+
+        // Populate the dropdown with files found in the bucket
+        selectDropdown.innerHTML = '<option value="">-- Select a File --</option>';
+        data.forEach(file => {
+            // Ignore standard folder placeholders if any exist
+            if (file.name !== '.emptyFolderPlaceholder') {
+                const option = document.createElement('option');
+                option.value = file.name;
+                option.textContent = file.name;
+                selectDropdown.appendChild(option);
+            }
+        });
+
+    } catch (error) {
+        console.error('Error fetching from Supabase:', error);
+        selectDropdown.innerHTML = '<option value="">Error loading files</option>';
+    }
+}
